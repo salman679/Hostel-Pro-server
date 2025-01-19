@@ -40,12 +40,13 @@ async function run() {
     //collections
     const usersCollection = client.db("HostelPro").collection("users");
     const mealsCollection = client.db("HostelPro").collection("meals");
+    const reviewsCollection = client.db("HostelPro").collection("reviews");
 
     //jwt related apis
     app.post("/jwt", (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "1h",
+        expiresIn: "5h",
       });
       res.send({ token });
     });
@@ -143,10 +144,116 @@ async function run() {
       }
     );
 
-    //add a meal
+    //meals related apis
+    app.get("/meals", async (req, res) => {
+      const sortBy = req.query.sortBy;
+
+      try {
+        let meals;
+
+        if (sortBy === "reviews_count") {
+          meals = await mealsCollection
+            .aggregate([
+              {
+                $addFields: {
+                  reviews_count: { $size: "$reviews" },
+                },
+              },
+              {
+                $sort: { reviews_count: -1 },
+              },
+            ])
+            .toArray();
+        } else if (sortBy) {
+          meals = await mealsCollection
+            .find()
+            .sort({ [sortBy]: -1 })
+            .toArray();
+        } else {
+          meals = await mealsCollection.find().toArray();
+        }
+
+        res.send(meals);
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    app.get("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.get("/meals/category/:category", async (req, res) => {
+      const category = req.params.category;
+      console.log(`Fetching meals for category: ${category}`); // Debugging log
+
+      const query = category !== "All" ? { category } : {}; // Adjust query for 'All' category
+      try {
+        const result = await mealsCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send("Error fetching meals");
+      }
+    });
+
     app.post("/meals", async (req, res) => {
       const meal = req.body;
       const result = await mealsCollection.insertOne(meal);
+      res.send(result);
+    });
+
+    app.put("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const { title, likes, rating, distributorName } = req.body;
+
+      // Build update object only with provided fields
+      const updateDoc = { $set: { title, likes, rating, distributorName } };
+
+      // Remove any undefined fields
+      Object.keys(updateDoc.$set).forEach(
+        (key) => updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
+      );
+
+      if (Object.keys(updateDoc.$set).length === 0)
+        return res.status(400).send({ message: "No fields to update" });
+
+      try {
+        const filter = { _id: new ObjectId(id) };
+        const result = await mealsCollection.updateOne(filter, updateDoc);
+        if (result.modifiedCount === 0)
+          return res.status(404).send({ message: "Meal not found" });
+
+        res.send({ message: "Meal updated successfully" });
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    app.get("/meals/reviews", async (req, res) => {
+      const sortBy = req.query.sortBy;
+
+      try {
+        const reviews = await reviewsCollection
+          .find()
+          .sort({ [sortBy]: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    app.delete("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsCollection.deleteOne(query);
       res.send(result);
     });
 
