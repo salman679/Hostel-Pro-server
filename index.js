@@ -5,6 +5,7 @@ require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const port = process.env.PORT || 5000;
 
@@ -41,6 +42,8 @@ async function run() {
     const usersCollection = client.db("HostelPro").collection("users");
     const mealsCollection = client.db("HostelPro").collection("meals");
     const reviewsCollection = client.db("HostelPro").collection("reviews");
+    const packagesCollection = client.db("HostelPro").collection("packages");
+    const paymentCollection = client.db("HostelPro").collection("payments");
 
     //jwt related apis
     app.post("/jwt", (req, res) => {
@@ -180,6 +183,36 @@ async function run() {
       }
     });
 
+    //get all meals
+    app.get("/all-meals", async (req, res) => {
+      const { search, category, minPrice, maxPrice, page, limit } = req.query;
+
+      try {
+        const query = {};
+        if (search) {
+          query.title = { $regex: search, $options: "i" };
+        }
+        if (category && category !== "All") {
+          query.category = category;
+        }
+        if (minPrice && maxPrice) {
+          query.price = { $gte: parseInt(minPrice), $lte: parseInt(maxPrice) };
+        }
+
+        const skip = (page - 1) * limit;
+        const meals = await mealsCollection
+          .find(query)
+          // .skip(skip)
+          // .limit(parseInt(limit))
+          .toArray();
+
+        res.send(meals);
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
     app.get("/meals/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -189,7 +222,6 @@ async function run() {
 
     app.get("/meals/category/:category", async (req, res) => {
       const category = req.params.category;
-      console.log(`Fetching meals for category: ${category}`); // Debugging log
 
       const query = category !== "All" ? { category } : {}; // Adjust query for 'All' category
       try {
@@ -207,26 +239,47 @@ async function run() {
       res.send(result);
     });
 
-    app.put("/meals/:id", async (req, res) => {
+    // app.put("/meals/:id", async (req, res) => {
+    //   const id = req.params.id;
+    //   const { title, likes, rating, distributorName } = req.body;
+
+    //   // Build update object only with provided fields
+    //   const updateDoc = { $set: { title, likes, rating, distributorName } };
+
+    //   // Remove any undefined fields
+    //   Object.keys(updateDoc.$set).forEach(
+    //     (key) => updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
+    //   );
+
+    //   if (Object.keys(updateDoc.$set).length === 0)
+    //     return res.status(400).send({ message: "No fields to update" });
+
+    //   try {
+    //     const filter = { _id: new ObjectId(id) };
+    //     const result = await mealsCollection.updateOne(filter, updateDoc);
+    //     if (result.modifiedCount === 0)
+    //       return res.status(404).send({ message: "Meal not found" });
+
+    //     res.send({ message: "Meal updated successfully" });
+    //   } catch (error) {
+    //     res.status(500).send({ message: "Internal Server Error" });
+    //   }
+    // });
+
+    //update in link of meals
+    app.patch("/meals/:id/like", async (req, res) => {
       const id = req.params.id;
-      const { title, likes, rating, distributorName } = req.body;
-
-      // Build update object only with provided fields
-      const updateDoc = { $set: { title, likes, rating, distributorName } };
-
-      // Remove any undefined fields
-      Object.keys(updateDoc.$set).forEach(
-        (key) => updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
-      );
-
-      if (Object.keys(updateDoc.$set).length === 0)
-        return res.status(400).send({ message: "No fields to update" });
+      const { likes } = req.body;
 
       try {
         const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: { likes } };
+
         const result = await mealsCollection.updateOne(filter, updateDoc);
-        if (result.modifiedCount === 0)
+
+        if (result.modifiedCount === 0) {
           return res.status(404).send({ message: "Meal not found" });
+        }
 
         res.send({ message: "Meal updated successfully" });
       } catch (error) {
@@ -234,6 +287,36 @@ async function run() {
       }
     });
 
+    //add reviews of meals
+    app.post("/meals/:id/reviews", async (req, res) => {
+      const { userName, text } = req.body;
+      const mealId = req.params.id;
+
+      try {
+        const review = {
+          userName,
+          text,
+          date: new Date(),
+        };
+
+        const query = { _id: new ObjectId(mealId) };
+        const update = {
+          $push: { reviews: review },
+        };
+
+        const result = await mealsCollection.updateOne(query, update);
+
+        if (result.modifiedCount === 0) {
+          return res.status(404).send({ message: "Meal not found" });
+        }
+
+        res.send({ message: "Review added successfully" });
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    //short by reviews
     app.get("/meals/reviews", async (req, res) => {
       const sortBy = req.query.sortBy;
 
@@ -254,6 +337,59 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    //payment related apis
+    app.get("/packages", async (req, res) => {
+      const result = await packagesCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.get("/packages/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const result = await packagesCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    //payment intent
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+
+      // Validate price
+      if (price === undefined || price === null || isNaN(price)) {
+        return res.status(400).send({ error: "Invalid price provided." });
+      }
+
+      const amount = Math.round(price * 100); // Ensure it's an integer
+
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount,
+          currency: "usd",
+          payment_method_types: ["card"],
+        });
+
+        console.log("Client Secret:", paymentIntent.client_secret);
+        res.send({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        console.error("Stripe Error:", error);
+        res.status(500).send({ error: error.message });
+      }
+    });
+
+    //payment details post to database
+    app.post("/payments", async (req, res) => {
+      const paymentInfo = req.body;
+      const result = await paymentCollection.insertOne(paymentInfo);
       res.send(result);
     });
 
