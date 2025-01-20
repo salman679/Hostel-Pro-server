@@ -389,8 +389,17 @@ async function run() {
     //payment details post to database
     app.post("/payments", async (req, res) => {
       const paymentInfo = req.body;
-      const result = await paymentCollection.insertOne(paymentInfo);
-      res.send(result);
+
+      console.log(paymentInfo);
+
+      //update the user subscription in the database
+      const filter = { email: paymentInfo.email };
+      const update = { $set: { subscription: paymentInfo.subscription } };
+      const result = await usersCollection.updateOne(filter, update);
+      console.log(result);
+
+      const result2 = await paymentCollection.insertOne(paymentInfo);
+      res.send(result2);
     });
 
     // Send a ping to confirm a successful connection
