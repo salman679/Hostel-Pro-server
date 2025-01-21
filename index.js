@@ -44,6 +44,7 @@ async function run() {
     const reviewsCollection = client.db("HostelPro").collection("reviews");
     const packagesCollection = client.db("HostelPro").collection("packages");
     const paymentCollection = client.db("HostelPro").collection("payments");
+    const upcomingCollection = client.db("HostelPro").collection("upcoming");
 
     //jwt related apis
     app.post("/jwt", (req, res) => {
@@ -80,7 +81,7 @@ async function run() {
     };
 
     //user related apis
-    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
+    app.get("/users", verifyToken, async (req, res) => {
       const { search } = req.query;
 
       let query = {};
@@ -101,21 +102,49 @@ async function run() {
       }
     });
 
-    app.get("/users/admin/:email", verifyToken, async (req, res) => {
+    //get individual user
+    app.get("/users/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+
+      res.send(user);
+    });
+
+    // getting role
+    app.get("/users/role/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
 
       if (email !== req.decoded.email) {
-        return res.status(403).send({ message: "forbidden access" });
+        return res.status(403).send({ message: "Forbidden access" });
       }
 
-      const query = { email: email };
-      const user = await usersCollection.findOne(query);
-      let admin = false;
-      if (user) {
-        admin = user?.role === "admin";
-      }
-      res.send({ admin });
+      const filter = { email };
+      const user = await usersCollection.findOne(filter);
+
+      res.send({ role: user?.role });
     });
+
+    app.get(
+      "/users/admin/:email",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+
+        if (email !== req.decoded.email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+
+        const query = { email: email };
+        const user = await usersCollection.findOne(query);
+        let admin = false;
+        if (user) {
+          admin = user?.role === "admin";
+        }
+        res.send({ admin });
+      }
+    );
 
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -340,6 +369,17 @@ async function run() {
       res.send(result);
     });
 
+    //upcoming meals
+    app.get("/upcoming-meals", async (req, res) => {
+      try {
+        const result = await upcomingCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
     //payment related apis
     app.get("/packages", async (req, res) => {
       const result = await packagesCollection.find().toArray();
@@ -369,7 +409,7 @@ async function run() {
         return res.status(400).send({ error: "Invalid price provided." });
       }
 
-      const amount = Math.round(price * 100); // Ensure it's an integer
+      const amount = Math.round(price * 100);
 
       try {
         const paymentIntent = await stripe.paymentIntents.create({
@@ -378,7 +418,6 @@ async function run() {
           payment_method_types: ["card"],
         });
 
-        console.log("Client Secret:", paymentIntent.client_secret);
         res.send({ clientSecret: paymentIntent.client_secret });
       } catch (error) {
         console.error("Stripe Error:", error);
@@ -390,14 +429,10 @@ async function run() {
     app.post("/payments", async (req, res) => {
       const paymentInfo = req.body;
 
-      console.log(paymentInfo);
-
       //update the user subscription in the database
       const filter = { email: paymentInfo.email };
       const update = { $set: { subscription: paymentInfo.subscription } };
-      const result = await usersCollection.updateOne(filter, update);
-      console.log(result);
-
+      await usersCollection.updateOne(filter, update);
       const result2 = await paymentCollection.insertOne(paymentInfo);
       res.send(result2);
     });
