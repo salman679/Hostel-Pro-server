@@ -45,6 +45,9 @@ async function run() {
     const packagesCollection = client.db("HostelPro").collection("packages");
     const paymentCollection = client.db("HostelPro").collection("payments");
     const upcomingCollection = client.db("HostelPro").collection("upcoming");
+    const requestedCollection = client
+      .db("HostelPro")
+      .collection("requestedMeals");
 
     //jwt related apis
     app.post("/jwt", (req, res) => {
@@ -125,6 +128,7 @@ async function run() {
       res.send({ role: user?.role });
     });
 
+    //admin
     app.get(
       "/users/admin/:email",
       verifyToken,
@@ -146,6 +150,7 @@ async function run() {
       }
     );
 
+    //add user
     app.post("/users", async (req, res) => {
       const user = req.body;
       //if user already added
@@ -159,6 +164,7 @@ async function run() {
       res.send(result);
     });
 
+    //make admin
     app.patch(
       "/users/admin/:id",
       verifyToken,
@@ -175,6 +181,94 @@ async function run() {
         res.send(result);
       }
     );
+
+    //all requested meals from user
+    app.get("/user/:email/requests", verifyToken, async (req, res) => {
+      const email = req.query.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      try {
+        // Fetch meals with filtered user requests
+        const mealsWithRequests = await mealsCollection
+          .find({ "requests.userEmail": email })
+          .project({
+            title: 1,
+            likes: 1,
+            "requests.$": 1, // Retrieve only the specific request for the user
+          })
+          .toArray();
+
+        // Fetch meals with filtered user reviews
+        const mealsWithReviews = await mealsCollection
+          .find({ "reviews.userEmail": email })
+          .project({
+            name: 1,
+            image: 1,
+            price: 1,
+            "reviews.$": 1, // Retrieve only the specific review for the user
+          })
+          .toArray();
+
+        // Merge the requests and reviews based on meal `id`
+        const combinedMeals = mealsWithRequests.map((meal) => {
+          const matchingReview = mealsWithReviews.find(
+            (reviewMeal) => reviewMeal._id.toString() === meal._id.toString()
+          );
+
+          return {
+            ...meal,
+            reviews: matchingReview ? matchingReview.reviews : [], // Add reviews if found
+          };
+        });
+
+        res.send(combinedMeals);
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .send({ message: "An error occurred while fetching data" });
+      }
+    });
+
+    // Cancel meal request or update review status
+    app.put("/meals/:id", async (req, res) => {
+      const id = req.params.id; // Meal ID from URL
+      const { email: userEmail, status } = req.body;
+
+      // Filter for finding the meal
+      const filter = { _id: new ObjectId(id) };
+
+      const updateDoc = {
+        $set: {
+          "requests.$[request].status": status,
+        },
+      };
+
+      // Specify the array filter to match the correct review
+      const options = {
+        arrayFilters: [
+          { "request.userEmail": userEmail }, // Match reviews by userEmail
+        ],
+      };
+
+      try {
+        const result = await mealsCollection.updateOne(
+          filter,
+          updateDoc,
+          options
+        );
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({
+          message: "An error occurred while updating the review status",
+          error,
+        });
+      }
+    });
 
     //meals related apis
     app.get("/meals", async (req, res) => {
@@ -311,6 +405,35 @@ async function run() {
         }
 
         res.send({ message: "Meal updated successfully" });
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    //request meal from user
+    app.post("/meals/:id/request", async (req, res) => {
+      const id = req.params.id;
+      const { userName, userEmail, status } = req.body;
+
+      try {
+        const request = {
+          userName,
+          userEmail,
+          status,
+        };
+
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $push: { requests: request },
+        };
+
+        const result = await mealsCollection.updateOne(query, update);
+
+        if (result.modifiedCount === 0) {
+          return res.status(404).send({ message: "Meal not found" });
+        }
+
+        res.send({ message: "Request added successfully" });
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error" });
       }
