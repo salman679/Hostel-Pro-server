@@ -389,7 +389,7 @@ async function run() {
     //   }
     // });
 
-    //update in link of meals
+    //update in like of meals
     app.patch("/meals/:id/like", async (req, res) => {
       const id = req.params.id;
       const { likes } = req.body;
@@ -428,12 +428,7 @@ async function run() {
         };
 
         const result = await mealsCollection.updateOne(query, update);
-
-        if (result.modifiedCount === 0) {
-          return res.status(404).send({ message: "Meal not found" });
-        }
-
-        res.send({ message: "Request added successfully" });
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error" });
       }
@@ -441,13 +436,14 @@ async function run() {
 
     //add reviews of meals
     app.post("/meals/:id/reviews", async (req, res) => {
-      const { userName, text } = req.body;
+      const { userName, text, userEmail } = req.body;
       const mealId = req.params.id;
 
       try {
         const review = {
           userName,
           text,
+          userEmail,
           date: new Date(),
         };
 
@@ -458,14 +454,49 @@ async function run() {
 
         const result = await mealsCollection.updateOne(query, update);
 
-        if (result.modifiedCount === 0) {
-          return res.status(404).send({ message: "Meal not found" });
-        }
-
-        res.send({ message: "Review added successfully" });
+        res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Internal Server Error" });
       }
+    });
+
+    //get reviews of meals for each user
+    app.get("/meals/:email/reviews", verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      try {
+        // Fetch meals with filtered user reviews
+        const mealsWithReviews = await mealsCollection
+          .find({ "reviews.userEmail": email })
+          .project({
+            title: 1,
+            likes: 1,
+            "reviews.$": 1, // Retrieve only the specific review for the user
+          })
+          .toArray();
+
+        res.send(mealsWithReviews);
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .send({ message: "An error occurred while fetching data" });
+      }
+    });
+
+    //delete reviews
+    app.delete("/meals/:id/reviews", async (req, res) => {
+      const id = req.params.id;
+      const { email } = req.query;
+
+      const query = { _id: new ObjectId(id) };
+      const result = await mealsCollection.updateOne(query, {
+        $pull: { reviews: { userEmail: email } },
+      });
+
+      console.log(id, email);
+
+      res.send(result);
     });
 
     //short by reviews
