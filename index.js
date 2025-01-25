@@ -44,7 +44,7 @@ async function run() {
     const reviewsCollection = client.db("HostelPro").collection("reviews");
     const packagesCollection = client.db("HostelPro").collection("packages");
     const paymentCollection = client.db("HostelPro").collection("payments");
-    const upcomingCollection = client.db("HostelPro").collection("upcoming");
+    const upcomingCollection = client.db("HostelPro").collection("newUpcoming");
     const requestedCollection = client
       .db("HostelPro")
       .collection("requestedMeals");
@@ -589,6 +589,14 @@ async function run() {
       await usersCollection.updateOne(filter, update);
       const result2 = await paymentCollection.insertOne(paymentInfo);
       res.send(result2);
+    });
+
+    //payment all details by user
+    app.get("/payment-history/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
