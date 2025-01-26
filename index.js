@@ -358,7 +358,12 @@ async function run() {
 
     app.post("/meals", async (req, res) => {
       const meal = req.body;
+      console.log(meal);
+
       const result = await mealsCollection.insertOne(meal);
+
+      console.log(result);
+
       res.send(result);
     });
 
