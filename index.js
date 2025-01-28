@@ -110,7 +110,6 @@ async function run() {
       const email = req.params.email;
       const query = { email: email };
       const user = await usersCollection.findOne(query);
-
       res.send(user);
     });
 
@@ -311,18 +310,14 @@ async function run() {
 
     app.post("/meals", async (req, res) => {
       const meal = req.body;
-
       const result = await mealsCollection.insertOne(meal);
-
       res.send(result);
     });
 
     //update a meal by ID
-    app.put("/meals/:id", async (req, res) => {
+    app.put("/meals/:id/edit", async (req, res) => {
       const id = req.params.id;
       const updatedMeal = req.body;
-      console.log(id, updatedMeal);
-
       const result = await mealsCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: updatedMeal }
@@ -569,19 +564,66 @@ async function run() {
     app.delete("/meals/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
+
       const result = await mealsCollection.deleteOne(query);
+
       res.send(result);
     });
 
     //upcoming meals
     app.get("/upcoming-meals", async (req, res) => {
+      const sortBy = req.query.sortBy;
+
       try {
-        const result = await upcomingCollection.find().toArray();
+        const result = await upcomingCollection
+          .find()
+          .sort({ [sortBy]: -1 })
+          .toArray();
         res.send(result);
       } catch (error) {
         console.error("Error fetching meals:", error);
         res.status(500).send("Internal Server Error");
       }
+    });
+
+    //post upcoming meals
+    app.post("/upcoming-meals", async (req, res) => {
+      const meal = req.body;
+      const result = await upcomingCollection.insertOne(meal);
+      res.send(result);
+    });
+
+    //update likes of upcoming meals
+    app.patch("/upcoming-meals/:id/like", async (req, res) => {
+      const id = req.params.id;
+      const { likes } = req.body;
+
+      try {
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: { likes } };
+
+        // Update likes in the upcoming collection
+        const result = await upcomingCollection.updateOne(filter, updateDoc);
+
+        if (likes >= 10) {
+          const meal = await upcomingCollection.findOne(filter);
+          await upcomingCollection.deleteOne(filter);
+          await mealsCollection.insertOne(meal);
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    //delete upcoming meals
+    app.delete("/upcoming-meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await upcomingCollection.deleteOne(query);
+      res.send(result);
     });
 
     //payment related apis
