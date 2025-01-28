@@ -11,7 +11,11 @@ const port = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://hostelpro-ed1bf.web.app",
+      "https://hostelpro-ed1bf.firebaseapp.com",
+    ],
     credentials: true,
   })
 );
@@ -297,8 +301,14 @@ async function run() {
 
     app.get("/meals/category/:category", async (req, res) => {
       const category = req.params.category;
+      const { search } = req.query;
 
-      const query = category !== "All" ? { category } : {}; // Adjust query for 'All' category
+      const query = category !== "All" ? { category } : {};
+
+      if (search) {
+        query.title = { $regex: search, $options: "i" };
+      }
+
       try {
         const result = await mealsCollection.find(query).toArray();
         res.send(result);
