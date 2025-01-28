@@ -182,59 +182,16 @@ async function run() {
       }
     );
 
-    //all requested meals from user
-    app.get("/user/:email/requests", verifyToken, async (req, res) => {
+    //meals added by admin
+    app.get("/meals/admin", verifyToken, verifyAdmin, async (req, res) => {
       const email = req.query.email;
-
-      if (email !== req.decoded.email) {
-        return res.status(403).send({ message: "Forbidden access" });
-      }
-
-      try {
-        // Fetch meals with filtered user requests
-        const mealsWithRequests = await mealsCollection
-          .find({ "requests.userEmail": email })
-          .project({
-            title: 1,
-            likes: 1,
-            "requests.$": 1, // Retrieve only the specific request for the user
-          })
-          .toArray();
-
-        // Fetch meals with filtered user reviews
-        const mealsWithReviews = await mealsCollection
-          .find({ "reviews.userEmail": email })
-          .project({
-            name: 1,
-            image: 1,
-            price: 1,
-            "reviews.$": 1, // Retrieve only the specific review for the user
-          })
-          .toArray();
-
-        // Merge the requests and reviews based on meal `id`
-        const combinedMeals = mealsWithRequests.map((meal) => {
-          const matchingReview = mealsWithReviews.find(
-            (reviewMeal) => reviewMeal._id.toString() === meal._id.toString()
-          );
-
-          return {
-            ...meal,
-            reviews: matchingReview ? matchingReview.reviews : [], // Add reviews if found
-          };
-        });
-
-        res.send(combinedMeals);
-      } catch (error) {
-        console.error(error);
-        res
-          .status(500)
-          .send({ message: "An error occurred while fetching data" });
-      }
+      const filter = { distributorEmail: email };
+      const result = await mealsCollection.countDocuments(filter);
+      res.send({ count: result });
     });
 
-    // Cancel meal request or update review status
-    app.put("/meals/:id", async (req, res) => {
+    // Cancel meal request
+    app.put("/meals/:id", verifyToken, async (req, res) => {
       const id = req.params.id; // Meal ID from URL
       const { email: userEmail, status } = req.body;
 
@@ -323,11 +280,7 @@ async function run() {
         }
 
         const skip = (page - 1) * limit;
-        const meals = await mealsCollection
-          .find(query)
-          // .skip(skip)
-          // .limit(parseInt(limit))
-          .toArray();
+        const meals = await mealsCollection.find(query).toArray();
 
         res.send(meals);
       } catch (error) {
@@ -358,41 +311,90 @@ async function run() {
 
     app.post("/meals", async (req, res) => {
       const meal = req.body;
-      console.log(meal);
 
       const result = await mealsCollection.insertOne(meal);
-
-      console.log(result);
 
       res.send(result);
     });
 
-    // app.put("/meals/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   const { title, likes, rating, distributorName } = req.body;
+    //update a meal by ID
+    app.put("/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedMeal = req.body;
+      console.log(id, updatedMeal);
 
-    //   // Build update object only with provided fields
-    //   const updateDoc = { $set: { title, likes, rating, distributorName } };
+      const result = await mealsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedMeal }
+      );
 
-    //   // Remove any undefined fields
-    //   Object.keys(updateDoc.$set).forEach(
-    //     (key) => updateDoc.$set[key] === undefined && delete updateDoc.$set[key]
-    //   );
+      res.send(result);
+    });
 
-    //   if (Object.keys(updateDoc.$set).length === 0)
-    //     return res.status(400).send({ message: "No fields to update" });
+    //serve meals
+    app.get("/serve-meals", async (req, res) => {
+      const searchQuery = req.query.search; // Get search query from the request
 
-    //   try {
-    //     const filter = { _id: new ObjectId(id) };
-    //     const result = await mealsCollection.updateOne(filter, updateDoc);
-    //     if (result.modifiedCount === 0)
-    //       return res.status(404).send({ message: "Meal not found" });
+      try {
+        // MongoDB aggregation pipeline
+        const result = await mealsCollection
+          .aggregate([
+            {
+              $project: {
+                _id: 1,
+                title: 1, // Include meal title for better response
+                requests: 1,
+              },
+            },
+            {
+              $unwind: "$requests", // Flatten the requests array
+            },
+            {
+              $match: {
+                // Match if search query is present
+                $or: [
+                  {
+                    "requests.userName": { $regex: searchQuery, $options: "i" },
+                  }, // Case-insensitive match for userName
+                  {
+                    "requests.userEmail": {
+                      $regex: searchQuery,
+                      $options: "i",
+                    },
+                  }, // Case-insensitive match for userEmail
+                ],
+              },
+            },
+          ])
+          .toArray(); // Convert cursor to array
 
-    //     res.send({ message: "Meal updated successfully" });
-    //   } catch (error) {
-    //     res.status(500).send({ message: "Internal Server Error" });
-    //   }
-    // });
+        res.send(result); // Send the filtered results
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    //status change in serve meals
+    app.put("/meals/:id/serve", async (req, res) => {
+      const id = req.params.id;
+      const { status, userEmail } = req.body;
+
+      try {
+        const result = await mealsCollection.updateOne(
+          {
+            _id: new ObjectId(id),
+            "requests.userEmail": userEmail,
+          },
+          { $set: { "requests.$.status": status } }
+        );
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating meal status:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
 
     //update in like of meals
     app.patch("/meals/:id/like", async (req, res) => {
@@ -439,6 +441,35 @@ async function run() {
       }
     });
 
+    // Get all requested meals for a user
+    app.get("/user/:email/requests", verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      try {
+        // Fetch meals with user requests and all reviews
+        const mealsWithRequests = await mealsCollection
+          .find({ "requests.userEmail": email })
+          .project({
+            title: 1,
+            likes: 1,
+            requests: { $elemMatch: { userEmail: email } },
+            reviews: 1,
+          })
+          .toArray();
+
+        res.send(mealsWithRequests);
+      } catch (error) {
+        console.error(error);
+        res
+          .status(500)
+          .send({ message: "An error occurred while fetching data" });
+      }
+    });
+
     //add reviews of meals
     app.post("/meals/:id/reviews", async (req, res) => {
       const { userName, text, userEmail } = req.body;
@@ -476,7 +507,7 @@ async function run() {
           .project({
             title: 1,
             likes: 1,
-            "reviews.$": 1, // Retrieve only the specific review for the user
+            "reviews.$": 1,
           })
           .toArray();
 
@@ -489,6 +520,22 @@ async function run() {
       }
     });
 
+    //edit reviews
+    app.put("/meals/:id/reviews", async (req, res) => {
+      const { id } = req.params;
+      const { email, text } = req.body;
+
+      const query = { _id: new ObjectId(id), "reviews.userEmail": email };
+      const update = {
+        $set: {
+          "reviews.$.text": text,
+        },
+      };
+
+      const result = await mealsCollection.updateOne(query, update);
+      res.send(result);
+    });
+
     //delete reviews
     app.delete("/meals/:id/reviews", async (req, res) => {
       const id = req.params.id;
@@ -498,8 +545,6 @@ async function run() {
       const result = await mealsCollection.updateOne(query, {
         $pull: { reviews: { userEmail: email } },
       });
-
-      console.log(id, email);
 
       res.send(result);
     });
