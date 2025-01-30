@@ -40,7 +40,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     //collections
     const usersCollection = client.db("HostelPro").collection("users");
@@ -266,23 +266,33 @@ async function run() {
       }
     });
 
-    //get all meals
     app.get("/all-meals", async (req, res) => {
-      const { search, category, minPrice, maxPrice, page, limit } = req.query;
+      const { search, category, minPrice, maxPrice } = req.query;
 
       try {
         const query = {};
+
+        // Search filter
         if (search) {
           query.title = { $regex: search, $options: "i" };
         }
-        if (category && category !== "All") {
+
+        // Category filter (ensure it doesn't check for "All")
+        if (category) {
           query.category = category;
         }
-        if (minPrice && maxPrice) {
-          query.price = { $gte: parseInt(minPrice), $lte: parseInt(maxPrice) };
+
+        // Price filter - Handle missing values properly
+        if (!isNaN(minPrice) || !isNaN(maxPrice)) {
+          query.price = {};
+          if (!isNaN(minPrice)) {
+            query.price.$gte = parseInt(minPrice);
+          }
+          if (!isNaN(maxPrice)) {
+            query.price.$lte = parseInt(maxPrice);
+          }
         }
 
-        const skip = (page - 1) * limit;
         const meals = await mealsCollection.find(query).toArray();
 
         res.send(meals);
@@ -606,17 +616,29 @@ async function run() {
     //update likes of upcoming meals
     app.patch("/upcoming-meals/:id/like", async (req, res) => {
       const id = req.params.id;
-      const { likes } = req.body;
+      const { userEmail } = req.body; // Get the user email
 
       try {
         const filter = { _id: new ObjectId(id) };
-        const updateDoc = { $set: { likes } };
+        const meal = await upcomingCollection.findOne(filter);
 
-        // Update likes in the upcoming collection
+        if (!meal) {
+          return res.status(404).send("Meal not found");
+        }
+
+        if (meal.likedUsers && meal.likedUsers.includes(userEmail)) {
+          return res.status(400).send("You have already liked this meal");
+        }
+
+        // Update likes and add user email to likedUsers array
+        const updateDoc = {
+          $set: { likes: (meal.likes || 0) + 1 },
+          $push: { likedUsers: userEmail }, // Add user email to the likedUsers array
+        };
+
         const result = await upcomingCollection.updateOne(filter, updateDoc);
 
-        if (likes >= 10) {
-          const meal = await upcomingCollection.findOne(filter);
+        if (meal.likes + 1 >= 10) {
           await upcomingCollection.deleteOne(filter);
           await mealsCollection.insertOne(meal);
         }
@@ -702,7 +724,7 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
