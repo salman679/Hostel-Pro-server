@@ -128,7 +128,7 @@ The server will run at `http://localhost:5000`.
 
 ## 🌐 Live API  
 
-The live API is hosted at: [Hostel Pro API](#)  
+The live API is hosted at: [Hostel Pro API](https://server-nine-pearl.vercel.app)  
 
 ---
 
