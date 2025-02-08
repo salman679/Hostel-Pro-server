@@ -99,7 +99,7 @@ HostelPro-Server/
 
 ### 1. Clone the Repository  
 ```bash  
-git clone https://github.com/your-repo/hostel-pro-server.git  
+git clone https://github.com/salman679/Hostel-Pro-server.git
 cd hostel-pro-server  
 ```  
 
