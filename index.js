@@ -47,13 +47,9 @@ async function run() {
     //collections
     const usersCollection = client.db("HostelPro").collection("users");
     const mealsCollection = client.db("HostelPro").collection("meals");
-    const reviewsCollection = client.db("HostelPro").collection("reviews");
     const packagesCollection = client.db("HostelPro").collection("packages");
     const paymentCollection = client.db("HostelPro").collection("payments");
     const upcomingCollection = client.db("HostelPro").collection("newUpcoming");
-    const requestedCollection = client
-      .db("HostelPro")
-      .collection("requestedMeals");
 
     //jwt related apis
     app.post("/jwt", (req, res) => {
@@ -305,7 +301,11 @@ async function run() {
     });
 
     app.get("/meals/:id", async (req, res) => {
-      const id = req.params.id;
+      const id = req?.params?.id;
+
+      if (!id || !ObjectId.isValid(id)) {
+        return res.status(400).json({ error: "Invalid Meal ID" });
+      }
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
       res.send(result);
@@ -568,18 +568,19 @@ async function run() {
 
     //short by reviews
     app.get("/meals/reviews", async (req, res) => {
-      const sortBy = req.query.sortBy;
-
       try {
-        const reviews = await reviewsCollection
-          .find()
-          .sort({ [sortBy]: -1 })
-          .toArray();
+        const meals = await db.collection("meals").find().toArray();
+        const response = meals.map((meal) => ({
+          meal_id: meal._id,
+          title: meal.title,
+          likes: meal.likes,
+          reviews_count: meal.reviews ? meal.reviews.length : 0,
+          reviews: meal.reviews || [],
+        }));
 
-        res.send(reviews);
+        res.json({ success: true, data: response });
       } catch (error) {
-        console.error("Error fetching reviews:", error);
-        res.status(500).send("Internal Server Error");
+        res.status(500).json({ success: false, error: error.message });
       }
     });
 
