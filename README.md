@@ -99,7 +99,7 @@ HostelPro-Server/
 
 ### 1. Clone the Repository  
 ```bash  
-git clone https://github.com/your-repo/hostel-pro-server.git  
+git clone https://github.com/salman679/Hostel-Pro-server.git
 cd hostel-pro-server  
 ```  
 
@@ -128,7 +128,7 @@ The server will run at `http://localhost:5000`.
 
 ## 🌐 Live API  
 
-The live API is hosted at: [Hostel Pro API](#)  
+The live API is hosted at: [Hostel Pro API](https://server-nine-pearl.vercel.app)  
 
 ---
 
