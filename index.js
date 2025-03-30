@@ -187,8 +187,22 @@ async function run() {
     app.get("/meals/admin", verifyToken, verifyAdmin, async (req, res) => {
       const email = req.query.email;
       const filter = { distributorEmail: email };
-      const result = await mealsCollection.countDocuments(filter);
-      res.send({ count: result });
+      const mealsLength = await mealsCollection.countDocuments(filter);
+      const totalMeals = await mealsCollection.countDocuments();
+      const totalUsers = await usersCollection.countDocuments();
+      const totalUpcomingMeals = await upcomingCollection.countDocuments();
+      const meals = await mealsCollection.find().toArray();
+      const totalReviews = meals.reduce(
+        (sum, meal) => sum + (meal.reviews ? meal.reviews.length : 0),
+        0
+      );
+      res.send({
+        mealsLength: mealsLength,
+        totalMeals: totalMeals,
+        totalUsers: totalUsers,
+        totalUpcomingMeals: totalUpcomingMeals,
+        totalReviews: totalReviews,
+      });
     });
 
     // Cancel meal request
@@ -569,7 +583,7 @@ async function run() {
     //short by reviews
     app.get("/meals/reviews", async (req, res) => {
       try {
-        const meals = await db.collection("meals").find().toArray();
+        const meals = await mealsCollection.find().toArray();
         const response = meals.map((meal) => ({
           meal_id: meal._id,
           title: meal.title,
