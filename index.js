@@ -537,6 +537,7 @@ async function run() {
         const mealsWithReviews = await mealsCollection
           .find({ "reviews.userEmail": email })
           .project({
+            image: 1,
             title: 1,
             likes: 1,
             "reviews.$": 1,
