@@ -373,7 +373,8 @@ async function run() {
             {
               $project: {
                 _id: 1,
-                title: 1, // Include meal title for better response
+                image: 1,
+                title: 1,
                 requests: 1,
               },
             },
