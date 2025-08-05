@@ -322,7 +322,48 @@ async function run() {
       }
       const query = { _id: new ObjectId(id) };
       const result = await mealsCollection.findOne(query);
+      
+      if (!result) {
+        console.log(`Meal not found with ID: ${id}`);
+        return res.status(404).json({ error: "Meal not found", mealId: id });
+      }
+      
       res.send(result);
+    });
+
+    // Debug endpoint to check meal existence
+    app.get("/debug/meals/:id", async (req, res) => {
+      const id = req.params.id;
+      
+      try {
+        // Check if ID is valid ObjectId format
+        const isValidId = ObjectId.isValid(id);
+        
+        if (!isValidId) {
+          return res.json({
+            exists: false,
+            error: "Invalid ObjectId format",
+            mealId: id,
+            isValidObjectId: false
+          });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const meal = await mealsCollection.findOne(query);
+        
+        // Get total count of meals for reference
+        const totalMeals = await mealsCollection.countDocuments();
+        
+        res.json({
+          exists: !!meal,
+          mealId: id,
+          isValidObjectId: true,
+          totalMealsInDatabase: totalMeals,
+          meal: meal ? { _id: meal._id, title: meal.title, likes: meal.likes, likedBy: meal.likedBy } : null
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message, mealId: id });
+      }
     });
 
     app.get("/meals/category/:category", async (req, res) => {
@@ -431,20 +472,67 @@ async function run() {
     //update in like of meals
     app.patch("/meals/:id/like", async (req, res) => {
       const id = req.params.id;
-      const { likes } = req.body;
+      const { userEmail, action } = req.body;
+
+      // Validate required fields
+      if (!userEmail || !action) {
+        return res.status(400).send({ message: "userEmail and action are required" });
+      }
+
+      // Validate ObjectId format
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid meal ID format" });
+      }
 
       try {
         const filter = { _id: new ObjectId(id) };
-        const updateDoc = { $set: { likes } };
+        console.log(`Looking for meal with ID: ${id}`);
+        
+        const meal = await mealsCollection.findOne(filter);
+        console.log(`Meal found:`, meal ? 'Yes' : 'No');
+
+        if (!meal) {
+          return res.status(404).send({ 
+            message: "Meal not found", 
+            mealId: id,
+            debug: "The meal with this ID does not exist in the database"
+          });
+        }
+
+        // Check if user has already liked this meal
+        const likedBy = meal.likedBy || [];
+        const hasLiked = likedBy.includes(userEmail);
+
+        if (action === 'like' && hasLiked) {
+          return res.status(400).send({ message: "You have already liked this meal" });
+        }
+
+        let updateDoc;
+        if (action === 'like' && !hasLiked) {
+          // Add user to likedBy array and increment likes
+          updateDoc = {
+            $push: { likedBy: userEmail },
+            $set: { likes: (meal.likes || 0) + 1 }
+          };
+        } else if (action === 'unlike' && hasLiked) {
+          // Remove user from likedBy array and decrement likes
+          updateDoc = {
+            $pull: { likedBy: userEmail },
+            $set: { likes: Math.max((meal.likes || 0) - 1, 0) }
+          };
+        } else {
+          return res.status(400).send({ message: "Invalid action" });
+        }
 
         const result = await mealsCollection.updateOne(filter, updateDoc);
 
         if (result.modifiedCount === 0) {
-          return res.status(404).send({ message: "Meal not found" });
+          return res.status(404).send({ message: "Failed to update meal" });
         }
 
-        res.send({ message: "Meal updated successfully" });
+        res.send({ message: "Meal updated successfully", success: true });
       } catch (error) {
+        console.error("Error updating meal like:", error);
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
