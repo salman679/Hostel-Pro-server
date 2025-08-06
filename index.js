@@ -16,6 +16,7 @@ app.use(
       "http://localhost:5174",
       "https://hostelpro-ed1bf.web.app",
       "https://hostelpro-ed1bf.firebaseapp.com",
+      "https://hostel-pro-cateriing.vercel.app"
       ,
     ],
     credentials: true,
