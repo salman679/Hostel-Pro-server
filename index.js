@@ -298,15 +298,14 @@ async function run() {
         if (!isNaN(minPrice) || !isNaN(maxPrice)) {
           query.price = {};
           if (!isNaN(minPrice)) {
-            query.price.$gte = parseInt(minPrice);
+            query.price.$gte = parseFloat(minPrice);
           }
           if (!isNaN(maxPrice)) {
-            query.price.$lte = parseInt(maxPrice);
+            query.price.$lte = parseFloat(maxPrice);
           }
         }
 
         const meals = await mealsCollection.find(query).toArray();
-
         res.send(meals);
       } catch (error) {
         console.error("Error fetching meals:", error);
@@ -764,6 +763,25 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await upcomingCollection.deleteOne(query);
       res.send(result);
+    });
+
+    // Endpoint to fetch a random featured meal
+    app.get("/featured-meal", async (req, res) => {
+      try {
+        const meals = await mealsCollection.find().toArray();
+        if (meals.length === 0) {
+          return res.status(404).send("No meals found");
+        }
+        
+        // Get a random meal from the array
+        const randomIndex = Math.floor(Math.random() * meals.length);
+        const featuredMeal = meals[randomIndex];
+        
+        res.send(featuredMeal);
+      } catch (error) {
+        console.error("Error fetching featured meal:", error);
+        res.status(500).send("Internal Server Error");
+      }
     });
 
     //payment related apis
