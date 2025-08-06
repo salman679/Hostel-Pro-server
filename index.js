@@ -768,16 +768,23 @@ async function run() {
     // Endpoint to fetch a random featured meal
     app.get("/featured-meal", async (req, res) => {
       try {
-        const meals = await mealsCollection.find().toArray();
-        if (meals.length === 0) {
+        // Count total meals
+        const mealsCount = await mealsCollection.countDocuments();
+        if (mealsCount === 0) {
           return res.status(404).send("No meals found");
         }
         
-        // Get a random meal from the array
-        const randomIndex = Math.floor(Math.random() * meals.length);
-        const featuredMeal = meals[randomIndex];
+        // Generate random skip value
+        const randomSkip = Math.floor(Math.random() * mealsCount);
         
-        res.send(featuredMeal);
+        // Fetch one random meal using skip and limit
+        const featuredMeal = await mealsCollection.find().skip(randomSkip).limit(1).toArray();
+        
+        if (featuredMeal.length === 0) {
+          return res.status(404).send("No meals found");
+        }
+        
+        res.send(featuredMeal[0]);
       } catch (error) {
         console.error("Error fetching featured meal:", error);
         res.status(500).send("Internal Server Error");
